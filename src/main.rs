@@ -17,9 +17,27 @@ async fn main() -> anyhow::Result<()> {
     while let Some(block) = stream.next().await {
         println!("New block {}", &block);
         let full_block = client
-            .get_block(block)
+            .get_block_with_txs(block)
             .await?
             .expect("oh shit, block probably hasnt arrived");
+
+        let uniswap_txns: Vec<Transaction> = full_block
+            .transactions
+            .iter_mut()
+            .filter(|txn| {
+                let is_uniswap_txn: bool = match txn.to {
+                    Some(fromAddress) => {
+                        fromAddress
+                            == "0x0d4a11d5EEaaC28EC3F61d100daF4d40471f1852"
+                                .parse::<H160>()
+                                .unwrap()
+                    }
+
+                    None => false,
+                };
+                is_uniswap_txn
+            })
+            .collect();
 
         println!("{}", serde_json::to_string_pretty(&full_block).unwrap());
     }
