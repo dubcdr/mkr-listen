@@ -66,14 +66,27 @@ async fn main() -> anyhow::Result<()> {
             match inputs {
                 Ok(inputs) => {
                     // swapExactETHForTokens(uint256 amountOutMin, address[] path, address to, uint256 deadline)
+                    let paths: Vec<Address> = inputs.1;
                     logger
-                        .log(format!("amountOutMin: ${}", inputs.0))
                         .indent(2)
-                        .log(format!("to: ${}", inputs.2));
+                        .log(format!("swap {} ethereum", txn.value))
+                        .indent(2)
+                        .log(format!("amountOutMin: {}", inputs.0))
+                        .indent(2)
+                        .log(format!("to: {}", inputs.2));
                     // logger.log(format!("path: ${}", inputs.1));
+                    for path in paths {
+                        logger
+                            .indent(2)
+                            .log(format!("through: {}", path.to_string()));
+                    }
                 }
                 Err(err) => {
-                    println!("{}", err);
+                    logger
+                        .indent(2)
+                        .log("Unsupported Uniswap Method")
+                        .indent(2)
+                        .log(format!("{}", err));
                 }
             };
         }
@@ -81,6 +94,9 @@ async fn main() -> anyhow::Result<()> {
         // println!("New block {}", serde_json::to_string_pretty(&full_block).unwrap());
         logger.loading("Waiting for next transaction...");
     }
+
+    // let mut pending_txns_stream = provider.watch_pending_transactions()
+
     AnyhowOk(())
 }
 
