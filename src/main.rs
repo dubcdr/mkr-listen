@@ -4,7 +4,9 @@ use std::time::Duration;
 
 use anyhow::{Ok as AnyhowOk, Result};
 use core::result::Result::Ok;
+use std::env;
 use rayon::prelude::*;
+use dotenv::dotenv;
 
 use ethers::contract::AbiError;
 use ethers::prelude::*;
@@ -22,13 +24,15 @@ abigen!(
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // let ws_endpoints = [INFURA_WS_ENDPOINT, ALCHEMY_WS_ENDPOINT];
-    // let ws_endpoint = ws_endpoints.choose(&mut rand::thread_rng()).unwrap();
-    let ws = Ws::connect(INFURA_WS_ENDPOINT).await?;
+    dotenv().ok();
 
-    // let http_endpoints = [INFURA_HTTP_ENDPOINT, ALCHEMY_WS_ENDPOINT];
-    // let http_endpoint = http_endpoints.choose(&mut rand::thread_rng()).unwrap();
-    let client = Provider::<Http>::try_from(INFURA_HTTP_ENDPOINT).unwrap();
+    let infura_project_id = env::var("INFURA_PROJECT_ID").expect("Need infura project id");
+
+    let ws = Ws::connect(format!("{}/{}", INFURA_WS_ENDPOINT, infura_project_id)).await?;
+    let provider = Provider::new(ws).interval(Duration::from_millis(2000));
+    let mut stream = provider.watch_blocks().await?;
+
+    let client = Provider::<Http>::try_from(format!("{}/{}", INFURA_HTTP_ENDPOINT, infura_project_id)).unwrap();
     let arc_client = Arc::new(client.clone());
 
     let address = UNISWAP_ADDR.parse::<Address>()?;
@@ -37,14 +41,11 @@ async fn main() -> anyhow::Result<()> {
     let logger = Logger::new();
 
     let logger_ref = Arc::new(Mutex::new(logger));
+
     let logger = Arc::clone(&logger_ref);
     let mut logger = logger.lock().unwrap();
-
     logger.loading("Waiting for next transaction...");
     drop(logger);
-
-    let provider = Provider::new(ws).interval(Duration::from_millis(2000));
-    let mut stream = provider.watch_blocks().await?;
 
     while let Some(block) = stream.next().await {
         let full_block = client
