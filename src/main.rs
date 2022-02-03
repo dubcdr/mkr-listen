@@ -63,21 +63,26 @@ async fn main() -> anyhow::Result<()> {
             .await?
             .expect("oh shit, block probably hasnt arrived");
 
+        // filter to uniswap transactions
+        let uniswap_txns: Vec<&Transaction> = filter_uni_txns(&full_block);
+
         let logger = Arc::clone(&logger_ref);
         let mut logger = logger.lock().unwrap();
         logger
             .done()
             .info(format!("New block {}", &full_block.hash.unwrap()));
+        if uniswap_txns.len() == 0 {
+            logger.info("No uniswap transactions");
+        }
         drop(logger);
-
-        // filter to uniswap transactions
-        let uniswap_txns: Vec<&Transaction> = filter_uni_txns(&full_block);
 
         // decode and log
         uniswap_txns.par_iter().for_each(|txn| {
             let inputs: Result<(U256, Vec<Address>, Address, U256), AbiError> =
                 // swapExactETHForTokens(uint256 amountOutMin, address[] path, address to, uint256 deadline)
                 contract.decode("swapExactETHForTokens", &txn.input);
+
+            let txn_message = format!("txn :: {}", &txn.hash());
             match inputs {
                 Ok(inputs) => {
                     // let paths: Vec<Address> = inputs.1;
@@ -90,7 +95,7 @@ async fn main() -> anyhow::Result<()> {
                     let mut logger = logger.lock().unwrap();
                     logger
                         .indent(1)
-                        .log(format!("Txn :: {}", &txn.hash()))
+                        .log(txn_message)
                         .indent(2)
                         .log(format!("swap {} ethereum", txn.value))
                         .indent(2)
@@ -98,14 +103,16 @@ async fn main() -> anyhow::Result<()> {
                         .indent(2)
                         .log(format!("to: {}", inputs.2));
                 }
-                Err(err) => {
+                Err(_err) => {
                     let logger = Arc::clone(&logger_ref);
                     let mut logger = logger.lock().unwrap();
                     logger
+                        .indent(1)
+                        .log(txn_message)
                         .indent(2)
-                        .log("Unsupported Uniswap Method")
-                        .same()
-                        .log(format!("[{}]", err));
+                        .log("Unsupported Uniswap Method");
+                    // .same()
+                    // .log(format!("[{}]", err));
                 }
             };
         });
