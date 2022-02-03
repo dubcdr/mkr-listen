@@ -1695,20 +1695,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "mkr-listen"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "ethers",
- "paris",
- "rayon",
- "serde",
- "serde_json",
- "token-list",
- "tokio",
-]
-
-[[package]]
 name = "native-tls"
 version = "0.2.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3087,6 +3073,20 @@ dependencies = [
  "crunchy",
  "hex",
  "static_assertions",
+]
+
+[[package]]
+name = "uni-listen"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "ethers",
+ "paris",
+ "rayon",
+ "serde",
+ "serde_json",
+ "token-list",
+ "tokio",
 ]
 
 [[package]]
