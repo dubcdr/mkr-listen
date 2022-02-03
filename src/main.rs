@@ -4,6 +4,8 @@ use std::time::Duration;
 
 use anyhow::{Ok as AnyhowOk, Result};
 use core::result::Result::Ok;
+use rayon::iter::IntoParallelRefIterator;
+use rayon::iter::ParallelIterator;
 
 use ethers::abi::decode;
 use ethers::abi::param_type::ParamType;
@@ -18,6 +20,15 @@ use std::sync::Arc;
 
 type SwapEthFor = (U256, Vec<Address>, Address, U256);
 const UNISWAP_ADDR: &'static str = "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D";
+const INFURA_WS_ENDPOINT: &'static str =
+    "wss://mainnet.infura.io/ws/v3/c50426cd378c4a0fb803eff92a4d9aed";
+const ALCHEMY_WS_ENDPOINT: &'static str =
+    "wss://eth-mainnet.alchemyapi.io/v2/FV4hMUQL6fF4jqAlk317noVRGY4E9MHl";
+const GETH_HTTP_ENDPOINT: &'static str = "http://localhost:8545";
+const INFURA_HTTP_ENDPOINT: &'static str =
+    "https://mainnet.infura.io/v3/c50426cd378c4a0fb803eff92a4d9aed";
+const ALCHEMY_HTTP_ENDPOINT: &'static str =
+    "https://eth-mainnet.alchemyapi.io/v2/FV4hMUQL6fF4jqAlk317noVRGY4E9MHl";
 
 abigen!(
     IUniswapV2Router,
@@ -27,19 +38,16 @@ abigen!(
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let endpoint = "wss://mainnet.infura.io/ws/v3/c50426cd378c4a0fb803eff92a4d9aed";
-    let ws = Ws::connect(endpoint).await?;
-    const _GETH_SRC: &'static str = "http://localhost:8545";
-    const INFURA_SRC: &'static str =
-        "https://mainnet.infura.io/v3/c50426cd378c4a0fb803eff92a4d9aed";
-    let client = Provider::<Http>::try_from(INFURA_SRC).unwrap();
+    let ws = Ws::connect(INFURA_WS_ENDPOINT).await?;
+
+    let client = Provider::<Http>::try_from(ALCHEMY_HTTP_ENDPOINT).unwrap();
     let arc_client = Arc::new(client.clone());
 
     let address = UNISWAP_ADDR.parse::<Address>()?;
     let contract = IUniswapV2Router::new(address, arc_client.clone());
 
     let mut logger = Logger::new();
-    logger.info("Uniswap Ticker");
+    // logger.info(BANNER);
     logger.loading("Waiting for next transaction...");
 
     let provider = Provider::new(ws).interval(Duration::from_millis(2000));
@@ -59,6 +67,37 @@ async fn main() -> anyhow::Result<()> {
 
         // decode and log
         // decode_uni_txns(&mut logger, uniswap_txns);
+        // uniswap_txns.par_iter().for_each(|txn| {
+        //     logger.indent(1).log(format!("Txn :: {}", &txn.hash()));
+        //     let inputs: Result<(U256, Vec<Address>, Address, U256), AbiError> =
+        //         contract.decode("swapExactETHForTokens", &txn.input);
+        //     match inputs {
+        //         Ok(inputs) => {
+        //             // swapExactETHForTokens(uint256 amountOutMin, address[] path, address to, uint256 deadline)
+        //             let paths: Vec<Address> = inputs.1;
+        //             logger
+        //                 .indent(2)
+        //                 .log(format!("swap {} ethereum", txn.value))
+        //                 .indent(2)
+        //                 .log(format!("amountOutMin: {}", inputs.0))
+        //                 .indent(2)
+        //                 .log(format!("to: {}", inputs.2));
+        //             // logger.log(format!("path: ${}", inputs.1));
+        //             for path in paths {
+        //                 logger
+        //                     .indent(2)
+        //                     .log(format!("through: {}", path.to_string()));
+        //             }
+        //         }
+        //         Err(err) => {
+        //             logger
+        //                 .indent(2)
+        //                 .log("Unsupported Uniswap Method")
+        //                 .same()
+        //                 .log(format!("[{}]", err));
+        //         }
+        //     };
+        // });
         for txn in uniswap_txns {
             logger.indent(1).log(format!("Txn :: {}", &txn.hash()));
             let inputs: Result<(U256, Vec<Address>, Address, U256), AbiError> =
@@ -85,8 +124,8 @@ async fn main() -> anyhow::Result<()> {
                     logger
                         .indent(2)
                         .log("Unsupported Uniswap Method")
-                        .indent(2)
-                        .log(format!("{}", err));
+                        .same()
+                        .log(format!("[{}]", err));
                 }
             };
         }
@@ -95,45 +134,13 @@ async fn main() -> anyhow::Result<()> {
         logger.loading("Waiting for next transaction...");
     }
 
-    // let mut pending_txns_stream = provider.watch_pending_transactions()
-
     AnyhowOk(())
-}
-
-fn decode_uni_txns(logger: &mut Logger, uniswap_txns: Vec<&Transaction>) {
-    for txn in uniswap_txns {
-        logger.log(format!("Txn :: {}", &txn.hash())).indent(1);
-
-        // swapExactETHForTokens(uint256 amountOutMin, address[] path, address to, uint256 deadline)
-        let param_types = [
-            ParamType::Uint(256),
-            ParamType::Array(Box::new(ParamType::Address)),
-            ParamType::Address,
-            ParamType::Uint(256),
-        ];
-
-        let inputs: Result<Vec<Token>, Error> = decode(&param_types, txn.input.as_ref());
-
-        match inputs {
-            Ok(inputs) => {
-                for (i, input) in inputs.iter().enumerate() {
-                    logger.log(format!("${} :: ${}", i, input)).indent(2);
-                }
-            }
-            Err(_err) => {
-                logger
-                    .info("Wrong type of transaction")
-                    .info("Txn Input")
-                    .info(&txn.input);
-            }
-        }
-    }
 }
 
 fn filter_uni_txns(full_block: &Block<Transaction>) -> Vec<&Transaction> {
     full_block
         .transactions
-        .iter()
+        .par_iter()
         .filter(|txn| {
             let is_uniswap_txn: bool = match txn.to {
                 Some(to_address) => {
