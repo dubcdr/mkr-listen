@@ -14,6 +14,7 @@ use ethers::providers::Http;
 use ethers::types::Transaction;
 use paris::Logger;
 use std::sync::{Arc, Mutex};
+use ethers::utils::format_ether;
 use uni_listen::{INFURA_HTTP_ENDPOINT, INFURA_WS_ENDPOINT, UNISWAP_ADDR};
 
 abigen!(
@@ -62,7 +63,7 @@ async fn main() -> anyhow::Result<()> {
             .done()
             .info(format!("New block {}", &full_block.hash.unwrap()));
         if uniswap_txns.len() == 0 {
-            logger.info("No uniswap transactions");
+            logger.indent(2).info("No uniswap transactions");
         }
         drop(logger);
 
@@ -87,7 +88,7 @@ async fn main() -> anyhow::Result<()> {
                         .indent(1)
                         .log(txn_message)
                         .indent(2)
-                        .log(format!("swap {} ethereum", txn.value))
+                        .log(format!("swap {} ethereum", format_ether(txn.value)))
                         .indent(2)
                         .log(format!("amountOutMin: {}", inputs.0))
                         .indent(2)
