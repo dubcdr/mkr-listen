@@ -29,6 +29,14 @@ pub mod uni_v2 {
   use paris::Logger;
 
   pub const UNISWAP_ADDR_STR: &'static str = "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D";
+  pub const AVAILABLE_METHOD_STRS: &'static [&'static str] = &[
+    // "0x18cbafe5", // swapExactTokensForETH(uint256 amountIn, uint256 amountOutMin, address[] path, address to, uint256 deadline)
+    // "0x38ed1739", // swapExactTokensForTokens(uint256 amountIn, uint256 amountOutMin, address[] path, address to, uint256 deadline)
+    "0x7ff36ab5", // swapExactETHForTokens(uint256 amountOutMin, address[] path, address to, uint256 deadline)
+    // "0xfb3bdb41", // swapETHForExactTokens(uint256 amountOut, address[] path, address to, uint256 deadline)
+    // "0x8803dbee", // swapTokensForExactTokens(uint256 amountOut, uint256 amountInMax, address[] path, address to, uint256 deadline)
+    // "0x4a25d94a", // swapTokensForExactETH(uint256 amountOut, uint256 amountInMax, address[] path, address to, uint256 deadline)
+  ];
 
   abigen!(
     IUniswapV2Router,
@@ -41,18 +49,21 @@ pub mod uni_v2 {
     IUniswapV2Router::new(address, client.clone())
   }
 
+
   pub fn filter_uni_txns(full_block: &Block<Transaction>) -> Vec<&Transaction> {
     full_block
       .transactions
       .par_iter()
       .filter(|txn| {
+        // filters if uniswap is to address,
+        // filters if method is one we can handle
         let is_uniswap_txn: bool = match txn.to {
           Some(to_address) => {
             let uniswap_addr = UNISWAP_ADDR_STR
               .parse::<H160>()
               .expect("Can't parse string to H160");
             let to_uniswap = to_address == uniswap_addr;
-            to_uniswap
+            to_uniswap && AVAILABLE_METHOD_STRS.contains(&&txn.input.to_string()[0..10])
           }
           None => false,
         };
