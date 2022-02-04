@@ -17,41 +17,41 @@ use uni_listen::uni_v2::{filter_uni_txns, parallel_decode_uni_txns_call_data};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    dotenv().ok();
+  dotenv().ok();
 
-    let provider = get_ws_provider(2000).await;
-    let mut stream = provider.watch_blocks().await?;
+  let provider = get_ws_provider(2000).await;
+  let mut stream = provider.watch_blocks().await?;
 
-    let client = get_http_client();
-    let arc_client = Arc::new(client.clone());
+  let client = get_http_client();
+  let arc_client = Arc::new(client.clone());
 
-    let mut logger = Logger::new();
+  let mut logger = Logger::new();
 
-    logger.loading("Waiting for next transaction...");
+  logger.loading("Waiting for next transaction...");
 
-    while let Some(block) = stream.next().await {
-        let full_block = client
-            .get_block_with_txs(block)
-            .await?
-            .expect("oh shit, block probably hasnt arrived");
+  while let Some(block) = stream.next().await {
+    let full_block = client
+      .get_block_with_txs(block)
+      .await?
+      .expect("oh shit, block probably hasnt arrived");
 
-        // filter to uniswap transactions
-        let uniswap_txns: Vec<&Transaction> = filter_uni_txns(&full_block);
+    // filter to uniswap transactions
+    let uniswap_txns: Vec<&Transaction> = filter_uni_txns(&full_block);
 
-        logger
-            .done()
-            .info(format!("New block {}", &full_block.hash.unwrap()));
-        if uniswap_txns.len() == 0 {
-            logger.indent(2).info("No uniswap transactions");
-        } else {
-          // decode and log
-          parallel_decode_uni_txns_call_data(uniswap_txns, arc_client.clone());
-        }
-
-        logger.loading("Waiting for next transaction...");
+    logger
+      .done()
+      .info(format!("New block {}", &full_block.hash.unwrap()));
+    if uniswap_txns.len() == 0 {
+      logger.indent(1).info("No supported uniswap transactions");
+    } else {
+      // decode and log
+      parallel_decode_uni_txns_call_data(uniswap_txns, arc_client.clone());
     }
 
-    AnyhowOk(())
+    logger.loading("Waiting for next transaction...");
+  }
+
+  AnyhowOk(())
 }
 
 async fn get_ws_provider(duration: u64) -> Provider<Ws> {
