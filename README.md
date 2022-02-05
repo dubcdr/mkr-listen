@@ -9,8 +9,8 @@ This is how I'll learn Rust and Blockchain Development
 - [x] Parrelism using [rayon](https://github.com/rayon-rs/rayon)
 - [x] Secret Management - use project keys from env file
 - [x] Better [project structure](https://doc.rust-lang.org/book/ch07-00-managing-growing-projects-with-packages-crates-and-modules.html)
-- [ ] Transaction type router (before decryption)
-- [ ] More transaction types
+- [x] Transaction type router (before decryption)
+- [x] More transaction types
 - [ ] Better logging
 - [ ] Testing &#128584;&#128584;&#128584;
 - [ ] Integrate [token-list](https://github.com/telcoin/token-list)
