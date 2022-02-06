@@ -1,19 +1,21 @@
 extern crate core;
 
+use std::collections::HashMap;
 use std::time::Duration;
 
-use anyhow::{Ok as AnyhowOk};
-use std::env;
+use anyhow::Ok as AnyhowOk;
 use dotenv::dotenv;
+use std::env;
+use std::iter::Map;
 
 use ethers::prelude::*;
 use ethers::providers::Http;
 use ethers::types::Transaction;
 use paris::Logger;
-use std::sync::{Arc};
-use uni_listen::{INFURA_HTTP_ENDPOINT, INFURA_WS_ENDPOINT};
+use std::sync::Arc;
+use token_list::{Token, TokenList};
 use uni_listen::uni_v2::{filter_uni_txns, parallel_decode_uni_txns_call_data};
-
+use uni_listen::{INFURA_HTTP_ENDPOINT, INFURA_WS_ENDPOINT, TOKEN_LIST_ENDPOINT};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -26,6 +28,16 @@ async fn main() -> anyhow::Result<()> {
   let arc_client = Arc::new(client.clone());
 
   let mut logger = Logger::new();
+
+  let mut token_map = HashMap::new();
+  let token_list = TokenList::from_uri(TOKEN_LIST_ENDPOINT).await
+    .expect("Failed to parse token endpoint");
+
+  logger.log("Available Tokens");
+  for token in token_list.tokens {
+    token_map.insert(token.name.clone(), token.clone());
+    logger.same().log(token.name).indent(1).log(token.address);
+  }
 
   logger.loading("Waiting for next transaction...");
 
@@ -41,11 +53,8 @@ async fn main() -> anyhow::Result<()> {
     logger
       .done()
       .info(format!("New block {}", &full_block.hash.unwrap()));
-    if uniswap_txns.len() == 0 {
-      logger.indent(1).info("No supported uniswap transactions");
-    } else {
-      // decode and log
-      parallel_decode_uni_txns_call_data(uniswap_txns, arc_client.clone());
+    if uniswap_txns.len() > 0 {
+      parallel_decode_uni_txns_call_data(uniswap_txns, arc_client.clone(), &token_map);
     }
 
     logger.loading("Waiting for next transaction...");
@@ -56,7 +65,8 @@ async fn main() -> anyhow::Result<()> {
 
 async fn get_ws_provider(duration: u64) -> Provider<Ws> {
   let infura_project_id = env::var("INFURA_PROJECT_ID").expect("Need infura project id");
-  let ws = Ws::connect(format!("{}/{}", INFURA_WS_ENDPOINT, infura_project_id)).await
+  let ws = Ws::connect(format!("{}/{}", INFURA_WS_ENDPOINT, infura_project_id))
+    .await
     .expect("Can't connect to Websocket Provider");
   let provider = Provider::new(ws).interval(Duration::from_millis(duration));
   provider
@@ -64,5 +74,6 @@ async fn get_ws_provider(duration: u64) -> Provider<Ws> {
 
 fn get_http_client() -> Provider<Http> {
   let infura_project_id = env::var("INFURA_PROJECT_ID").expect("Need infura project id");
-  Provider::<Http>::try_from(format!("{}/{}", INFURA_HTTP_ENDPOINT, infura_project_id)).expect("Can't connect to HTTP Provider")
+  Provider::<Http>::try_from(format!("{}/{}", INFURA_HTTP_ENDPOINT, infura_project_id))
+    .expect("Can't connect to HTTP Provider")
 }
