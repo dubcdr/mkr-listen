@@ -25,13 +25,13 @@ pub enum RpcProvider {
 
 pub mod uni_v2 {
   use std::collections::HashMap;
-  use std::iter::Map;
+  use std::sync::{Arc, Mutex};
+
   use ethers::prelude::*;
   use ethers::utils::{format_ether, hex};
   use paris::Logger;
   use rayon::prelude::*;
-  use std::sync::{Arc, Mutex};
-  use token_list::{Token, TokenList};
+  use token_list::Token;
 
   pub const UNISWAP_ADDR_STR: &'static str = "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D";
   pub const AVAILABLE_METHOD_STRS: &'static [&'static str] = &[
@@ -248,7 +248,7 @@ pub mod uni_v2 {
     method: &TokenTxnMethod,
     inputs: &ISwapTokenInputs,
     logger: &Arc<Mutex<Logger>>,
-    token_map: &HashMap<String, Token>
+    token_map: &HashMap<String, Token>,
   ) {
     let origin_token = inputs.2.get(0).unwrap();
     let origin_token = get_token_pretty(token_map, origin_token);
@@ -289,13 +289,22 @@ pub mod uni_v2 {
   }
 
   fn get_token_pretty(token_map: &HashMap<String, Token>, token_addr: &Address) -> String {
+    println!("Get token pretty");
     let token_addr_str = hex::encode(token_addr);
+    println!("token address: {}", token_addr_str);
     let token = token_map.get(&token_addr_str);
     let token_str = token_addr.to_string();
     let token_str = match token {
-      Some(t) => &t.name,
+      Some(t) => {
+        println!("FOUND ONE FOUND ONE FOUND ONE");
+        println!("FOUND ONE FOUND ONE FOUND ONE");
+        println!("FOUND ONE FOUND ONE FOUND ONE");
+        &t.name
+      }
       None => &token_str
     };
+    println!("map token: {}", token_str);
+
     token_str.clone()
   }
 

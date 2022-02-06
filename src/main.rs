@@ -1,21 +1,20 @@
 extern crate core;
 
 use std::collections::HashMap;
+use std::env;
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Ok as AnyhowOk;
 use dotenv::dotenv;
-use std::env;
-use std::iter::Map;
-
 use ethers::prelude::*;
 use ethers::providers::Http;
 use ethers::types::Transaction;
 use paris::Logger;
-use std::sync::Arc;
-use token_list::{Token, TokenList};
-use uni_listen::uni_v2::{filter_uni_txns, parallel_decode_uni_txns_call_data};
+use token_list::TokenList;
+
 use uni_listen::{INFURA_HTTP_ENDPOINT, INFURA_WS_ENDPOINT, TOKEN_LIST_ENDPOINT};
+use uni_listen::uni_v2::{filter_uni_txns, parallel_decode_uni_txns_call_data};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -35,7 +34,7 @@ async fn main() -> anyhow::Result<()> {
 
   logger.log("Available Tokens");
   for token in token_list.tokens {
-    token_map.insert(token.name.clone(), token.clone());
+    token_map.insert(token.address.clone(), token.clone());
     logger.same().log(token.name).indent(1).log(token.address);
   }
 
