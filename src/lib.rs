@@ -13,6 +13,10 @@ pub const INFURA_HTTP_ENDPOINT: &'static str = "https://mainnet.infura.io/v3";
 // Geth Constants
 // pub const GETH_HTTP_ENDPOINT: &'static str = "http://localhost:8545";
 
+// pub const TOKEN_LIST_ENDPOINT: &'static str = "https://defi.cmc.eth.link";
+pub const TOKEN_LIST_ENDPOINT: &'static str = "https://tokens.coingecko.com/uniswap/all.json";
+
+
 pub enum RpcProvider {
   Alchemy,
   Geth,
@@ -20,11 +24,14 @@ pub enum RpcProvider {
 }
 
 pub mod uni_v2 {
+  use std::collections::HashMap;
+  use std::iter::Map;
   use ethers::prelude::*;
-  use ethers::utils::format_ether;
+  use ethers::utils::{format_ether, hex};
   use paris::Logger;
   use rayon::prelude::*;
   use std::sync::{Arc, Mutex};
+  use token_list::{Token, TokenList};
 
   pub const UNISWAP_ADDR_STR: &'static str = "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D";
   pub const AVAILABLE_METHOD_STRS: &'static [&'static str] = &[
@@ -122,6 +129,7 @@ pub mod uni_v2 {
   pub fn parallel_decode_uni_txns_call_data(
     txns: Vec<&Transaction>,
     client: Arc<Provider<Http>>,
+    token_map: &HashMap<String, Token>,
   ) {
     let uni_router_contract = get_uniswap_router_contract(client);
 
@@ -135,11 +143,11 @@ pub mod uni_v2 {
       match txn_inputs {
         UniTxnInput::SwapEth(inputs) => {
           let txn_method: EthTxnMethod = UniTxnMethod::eth(txn_method);
-          log_eth_txn_inputs(&txn, &txn_method, &inputs, &logger)
+          log_eth_txn_inputs(&txn, &txn_method, &inputs, &logger, token_map)
         }
         UniTxnInput::SwapToken(inputs) => {
           let txn_method: TokenTxnMethod = UniTxnMethod::token(txn_method);
-          log_token_txn_inputs(&txn, &txn_method, &inputs, &logger)
+          log_token_txn_inputs(&txn, &txn_method, &inputs, &logger, token_map)
         }
       }
     });
@@ -213,25 +221,26 @@ pub mod uni_v2 {
     txn_method: &EthTxnMethod,
     txn_inputs: &ISwapEthInputs,
     logger: &Arc<Mutex<Logger>>,
+    token_map: &HashMap<String, Token>,
   ) {
+    let token_addr = txn_inputs.2;
+    let token_str = get_token_pretty(token_map, &token_addr);
     let amount_out_str = match txn_method {
       EthTxnMethod::SwapEthForExactTokens => {
-        format!("for {} {}", txn_inputs.0, txn_inputs.2)
+        format!("for {} {}", txn_inputs.0, token_str)
       }
       EthTxnMethod::SwapExactEthForTokens => {
-        format!("for >{} {}", txn_inputs.0, txn_inputs.2)
+        format!("for >{} {}", txn_inputs.0, token_str)
       }
     };
 
     let logger = Arc::clone(&logger);
     let mut logger = logger.lock().unwrap();
     logger
+      .same()
       .indent(1)
-      .log(format!("Transaction :: {}", &txn.hash()))
-      .indent(2)
-      .log(format!("Swap {} ethereum", format_ether(txn.value)))
-      .indent(2)
-      .log(amount_out_str);
+      .log(format!("TXN {} :: ", &txn.hash()))
+      .log(format!("Trade {} eth {}", format_ether(txn.value), amount_out_str));
   }
 
   fn log_token_txn_inputs(
@@ -239,9 +248,12 @@ pub mod uni_v2 {
     method: &TokenTxnMethod,
     inputs: &ISwapTokenInputs,
     logger: &Arc<Mutex<Logger>>,
+    token_map: &HashMap<String, Token>
   ) {
     let origin_token = inputs.2.get(0).unwrap();
+    let origin_token = get_token_pretty(token_map, origin_token);
     let destination_token = inputs.2.last().unwrap();
+    let destination_token = get_token_pretty(token_map, destination_token);
     let amount_out_str = match method {
       TokenTxnMethod::SwapExactTokensForTokens => format!(
         "Trade {} {} for >{} {}",
@@ -270,11 +282,21 @@ pub mod uni_v2 {
     };
     let logger = Arc::clone(&logger);
     let mut logger = logger.lock().unwrap();
-    logger
+    logger.same()
       .indent(1)
-      .log(format!("Transaction :: {}", &txn.hash()))
-      .indent(2)
+      .log(format!("TXN {} :: ", &txn.hash()))
       .log(amount_out_str);
+  }
+
+  fn get_token_pretty(token_map: &HashMap<String, Token>, token_addr: &Address) -> String {
+    let token_addr_str = hex::encode(token_addr);
+    let token = token_map.get(&token_addr_str);
+    let token_str = token_addr.to_string();
+    let token_str = match token {
+      Some(t) => &t.name,
+      None => &token_str
+    };
+    token_str.clone()
   }
 
   pub fn serial_decode_uni_txns_call_data(txns: Vec<&Transaction>, client: Arc<Provider<Http>>) {
@@ -291,8 +313,9 @@ pub mod uni_v2 {
           // SwapExactEthforTokens(uint256 amountOutMin, address[] path, address to, uint256 deadline)
           let paths: Vec<Address> = inputs.1;
           logger
+            .same()
             .indent(2)
-            .log(format!("swap {} ethereum", format_ether(txn.value)))
+            .log(format!("swap {} eth", format_ether(txn.value)))
             .indent(2)
             .log(format!("amountOutMin: {}", inputs.0))
             .indent(2)
