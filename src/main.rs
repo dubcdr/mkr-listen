@@ -32,10 +32,10 @@ async fn main() -> anyhow::Result<()> {
   let token_list = TokenList::from_uri(TOKEN_LIST_ENDPOINT).await
     .expect("Failed to parse token endpoint");
 
-  logger.log("Available Tokens");
+  // logger.log("Available Tokens");
   for token in token_list.tokens {
     token_map.insert(token.address.clone(), token.clone());
-    logger.same().log(token.name).indent(1).log(token.address);
+    // logger.same().log(token.name).indent(1).log(token.address);
   }
 
   logger.loading("Waiting for next transaction...");
