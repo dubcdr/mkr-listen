@@ -224,13 +224,15 @@ pub mod uni_v2 {
     token_map: &HashMap<String, Token>,
   ) {
     let token_addr = txn_inputs.2;
-    let token_str = get_token_pretty(token_map, &token_addr);
-    let amount_out_str = match txn_method {
-      EthTxnMethod::SwapEthForExactTokens => {
-        format!("for {} {}", txn_inputs.0, token_str)
-      }
-      EthTxnMethod::SwapExactEthForTokens => {
-        format!("for >{} {}", txn_inputs.0, token_str)
+    let amount_out_str = match get_token(token_map, &token_addr) {
+      Some(t) => {
+        // let units = txn_inputs.0 / t.decimals;
+        let units = quant_after_division(txn_inputs.0, &t);
+        let symbol = &t.symbol;
+        format!("for {} {}", units, symbol)
+      },
+      None => {
+        format!("for {} {}", txn_inputs.0, &token_addr)
       }
     };
 
@@ -239,8 +241,8 @@ pub mod uni_v2 {
     logger
       .same()
       .indent(1)
-      .log(format!("TXN {} :: ", &txn.hash()))
-      .log(format!("Trade {} eth {}", format_ether(txn.value), amount_out_str));
+      .log(format!("Txn {} :: ", &txn.hash()))
+      .log(format!("Trade {} ETH {}", format_ether(txn.value), amount_out_str));
   }
 
   fn log_token_txn_inputs(
@@ -250,62 +252,56 @@ pub mod uni_v2 {
     logger: &Arc<Mutex<Logger>>,
     token_map: &HashMap<String, Token>,
   ) {
-    let origin_token = inputs.2.get(0).unwrap();
-    let origin_token = get_token_pretty(token_map, origin_token);
-    let destination_token = inputs.2.last().unwrap();
-    let destination_token = get_token_pretty(token_map, destination_token);
-    let amount_out_str = match method {
-      TokenTxnMethod::SwapExactTokensForTokens => format!(
-        "Trade {} {} for >{} {}",
-        inputs.0, origin_token, inputs.1, destination_token
-      ),
-      TokenTxnMethod::SwapTokensForExactTokens => format!(
-        "Trade {} {} for {} {}",
-        inputs.0, origin_token, inputs.1, destination_token
-      ),
-      TokenTxnMethod::SwapExactTokensForEth => {
-        format!(
-          "Trade {} {} for >{} ETH",
-          inputs.0,
-          origin_token,
-          format_ether(inputs.1)
-        )
-      }
-      TokenTxnMethod::SwapTokensForExactEth => {
-        format!(
-          "Trade {} {} for {} ETH",
-          inputs.0,
-          origin_token,
-          format_ether(inputs.1)
-        )
+    let origin_token_addr = inputs.2.get(0).unwrap();
+    let origin_token = get_token(token_map, origin_token_addr);
+    let origin_quantity = inputs.0;
+    let origin_token_str = match origin_token {
+      Some(t) => {
+        format!("{}", &t.symbol)
+      },
+      None => {
+        format!("{}", origin_token_addr)
       }
     };
+    let origin_token_quantity = match origin_token {
+      Some(t) => quant_after_division(origin_quantity, &t),
+      None => origin_quantity.as_u128()
+    };
+
+    let destination_token_addr = inputs.2.last().unwrap();
+    let destination_token = get_token(token_map, destination_token_addr);
+    let destination_quantity = inputs.1;
+    let destination_token_str = match method {
+      TokenTxnMethod::SwapExactTokensForEth | TokenTxnMethod::SwapTokensForExactEth => String::from("ETH"),
+      TokenTxnMethod::SwapTokensForExactTokens | TokenTxnMethod::SwapExactTokensForTokens => match destination_token {
+        Some(t) => format!("{}", &t.symbol),
+        None => format!("{}", origin_token_addr)
+      }
+    };
+    let destination_token_quantity = match method {
+      TokenTxnMethod::SwapExactTokensForEth | TokenTxnMethod::SwapTokensForExactEth => format_ether(destination_quantity).as_u128(),
+      TokenTxnMethod::SwapTokensForExactTokens | TokenTxnMethod::SwapExactTokensForTokens => match destination_token {
+        Some(t) => quant_after_division(destination_quantity, &t),
+        None => destination_quantity.as_u128()
+      }
+    };
+
+    let input_str = format!("Trade {} {} for {} {}", origin_token_quantity, origin_token_str, destination_token_quantity, destination_token_str);
     let logger = Arc::clone(&logger);
     let mut logger = logger.lock().unwrap();
     logger.same()
       .indent(1)
-      .log(format!("TXN {} :: ", &txn.hash()))
-      .log(amount_out_str);
+      .log(format!("Txn {} :: ", &txn.hash()))
+      .log(input_str);
   }
 
-  fn get_token_pretty(token_map: &HashMap<String, Token>, token_addr: &Address) -> String {
-    println!("Get token pretty");
-    let token_addr_str = hex::encode(token_addr);
-    println!("token address: {}", token_addr_str);
-    let token = token_map.get(&token_addr_str);
-    let token_str = token_addr.to_string();
-    let token_str = match token {
-      Some(t) => {
-        println!("FOUND ONE FOUND ONE FOUND ONE");
-        println!("FOUND ONE FOUND ONE FOUND ONE");
-        println!("FOUND ONE FOUND ONE FOUND ONE");
-        &t.name
-      }
-      None => &token_str
-    };
-    println!("map token: {}", token_str);
+  fn quant_after_division(origin_quantity: U256, t: &&Token) -> u128 {
+    origin_quantity.as_u128() / ((10 as u128).pow(*&t.decimals as u32))
+  }
 
-    token_str.clone()
+  fn get_token<'a>(token_map: &'a HashMap<String, Token>, token_addr: &Address) -> Option<&'a Token> {
+    let token_addr_str = format!("0x{}",hex::encode(token_addr));
+    token_map.get(&token_addr_str)
   }
 
   pub fn serial_decode_uni_txns_call_data(txns: Vec<&Transaction>, client: Arc<Provider<Http>>) {
