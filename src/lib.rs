@@ -28,10 +28,11 @@ pub mod uni_v2 {
   use std::sync::{Arc, Mutex};
 
   use ethers::prelude::*;
-  use ethers::utils::{format_ether, hex};
+  use ethers::utils::{hex};
   use paris::Logger;
   use rayon::prelude::*;
   use token_list::Token;
+  use anyhow::{Result, Ok};
 
   pub const UNISWAP_ADDR_STR: &'static str = "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D";
   pub const AVAILABLE_METHOD_STRS: &'static [&'static str] = &[
@@ -57,24 +58,6 @@ pub mod uni_v2 {
     Token(TokenTxnMethod),
   }
 
-  impl UniTxnMethod {
-    fn eth(self) -> EthTxnMethod {
-      if let UniTxnMethod::Eth(e) = self {
-        e
-      } else {
-        panic!("Not a EthTxnMethod")
-      }
-    }
-
-    fn token(self) -> TokenTxnMethod {
-      if let UniTxnMethod::Token(t) = self {
-        t
-      } else {
-        panic!("Not a TokenTxnMethod")
-      }
-    }
-  }
-
   #[derive(PartialEq)]
   enum EthTxnMethod {
     SwapEthForExactTokens,
@@ -87,6 +70,128 @@ pub mod uni_v2 {
     SwapExactTokensForTokens,
     SwapTokensForExactTokens,
     SwapTokensForExactEth,
+  }
+
+  struct UniTxnInputs {
+    origin_address: Option<Address>,
+    origin_amount: U256,
+    destination_address: Option<Address>,
+    destination_amount: U256,
+  }
+
+  impl UniTxnInputs {
+    fn new(txn: &Transaction, uniswap_router_contract: &IUniswapV2Router<Provider<Http>>) -> UniTxnInputs {
+      let (txn_inputs, method) = decode_txn_inputs(txn, uniswap_router_contract).unwrap();
+      match txn_inputs {
+        UniTxnInput::SwapEth(inputs) => {
+          let origin_address = None;
+          let destination_address = Some(inputs.1.last().unwrap().clone());
+          let destination_amount = inputs.0;
+          let origin_amount = txn.value;
+          Self {
+            origin_amount,
+            origin_address,
+            destination_amount,
+            destination_address,
+          }
+        }
+        UniTxnInput::SwapToken(inputs) => {
+          match method {
+            UniTxnMethod::Token(TokenTxnMethod::SwapExactTokensForTokens) |
+            UniTxnMethod::Token(TokenTxnMethod::SwapExactTokensForEth) => {
+              let destination_address: Option<Address> = match method {
+                UniTxnMethod::Token(TokenTxnMethod::SwapExactTokensForEth) => None,
+                UniTxnMethod::Token(TokenTxnMethod::SwapExactTokensForTokens) => Some(inputs.2.last().unwrap().clone() as Address),
+                _ => panic!("Hit an impossible catch all")
+              };
+
+              let origin_address: Option<Address> = match method {
+                UniTxnMethod::Token(TokenTxnMethod::SwapExactTokensForTokens) |
+                UniTxnMethod::Token(TokenTxnMethod::SwapExactTokensForEth) => Some(inputs.2.get(0).unwrap().clone() as Address),
+                _ => panic!("Hit an impossible catch all")
+              };
+
+              Self {
+                destination_address,
+                destination_amount: inputs.1,
+                origin_address,
+                origin_amount: inputs.0,
+              }
+            }
+            UniTxnMethod::Token(TokenTxnMethod::SwapTokensForExactTokens) |
+            UniTxnMethod::Token(TokenTxnMethod::SwapTokensForExactEth) => {
+              let destination_address: Option<Address> = match method {
+                UniTxnMethod::Token(TokenTxnMethod::SwapTokensForExactEth) => None,
+                UniTxnMethod::Token(TokenTxnMethod::SwapTokensForExactTokens) => Some(inputs.2.last().unwrap().clone() as Address),
+                _ => panic!("Hit an impossible catch all")
+              };
+
+              let origin_address: Option<Address> = match method {
+                UniTxnMethod::Token(TokenTxnMethod::SwapTokensForExactTokens) |
+                UniTxnMethod::Token(TokenTxnMethod::SwapTokensForExactEth) => Some(inputs.2.get(0).unwrap().clone() as Address),
+                _ => panic!("Hit an impossible catch all")
+              };
+
+              Self {
+                destination_address,
+                destination_amount: inputs.0,
+                origin_address,
+                origin_amount: inputs.1,
+              }
+            }
+            _ => panic!("We failed")
+          }
+        }
+      }
+    }
+
+    pub fn log_str(&self, token_map: &HashMap<String, Token>) -> String {
+      let origin_str = UniTxnInputs::build_side_str(&self.origin_amount, &self.origin_address, &token_map);
+      let destination_str = UniTxnInputs::build_side_str(&self.destination_amount, &self.destination_address, &token_map);
+
+      format!("Swap {} for {}", origin_str, destination_str)
+    }
+
+    fn build_side_str(
+      amount: &U256, address: &Option<Address>, token_map: &HashMap<String, Token>,
+    ) -> String {
+      match address {
+        Some(a) => {
+          let address = format!("0x{}", hex::encode(a));
+          match token_map.get(&address) {
+            Some(t) => {
+              format!("{} {}", UniTxnInputs::parse_u256_to_f64(amount, t.decimals as usize), t.symbol)
+              // todo format amount
+            }
+            None => {
+              format!("{} {}", amount, address)
+            }
+          }
+        }
+        None => {
+          UniTxnInputs::build_eth_str(amount)
+        }
+      }
+    }
+
+    fn build_eth_str(amount: &U256) -> String {
+      format!("{} ETH", UniTxnInputs::parse_u256_to_f64(amount, 18))
+    }
+
+    fn parse_u256_to_f64(amount: &U256, decimals: usize) -> f64 {
+      // let str = format!("{}", amount);
+      let error_msg = format!(
+        "decimals: {}\namount: {}",
+        decimals,
+        amount,
+      );
+      let mut padded_str = format!("{:0decimals$}", amount, decimals = decimals);
+
+      padded_str.insert((padded_str.len() as u16 - decimals as u16) as usize, '.');
+
+      let floating = padded_str.parse::<f64>().expect(&error_msg);
+      floating
+    }
   }
 
   abigen!(
@@ -137,19 +242,11 @@ pub mod uni_v2 {
     let logger = Arc::new(Mutex::new(logger));
 
     txns.par_iter().for_each(|txn| {
-      let (txn_inputs, txn_method) = decode_txn_inputs(&txn, &uni_router_contract)
-        .expect("Transactions should be filtered by decode step");
-
-      match txn_inputs {
-        UniTxnInput::SwapEth(inputs) => {
-          let txn_method: EthTxnMethod = UniTxnMethod::eth(txn_method);
-          log_eth_txn_inputs(&txn, &txn_method, &inputs, &logger, token_map)
-        }
-        UniTxnInput::SwapToken(inputs) => {
-          let txn_method: TokenTxnMethod = UniTxnMethod::token(txn_method);
-          log_token_txn_inputs(&txn, &txn_method, &inputs, &logger, token_map)
-        }
-      }
+      let uni_txn = UniTxnInputs::new(txn, &uni_router_contract);
+      let log_str = uni_txn.log_str(token_map);
+      let logger = Arc::clone(&logger);
+      let mut logger = logger.lock().unwrap();
+      logger.log(format!("Txn {} :: {}", txn.hash, log_str));
     });
   }
 
@@ -173,7 +270,7 @@ pub mod uni_v2 {
   fn decode_txn_inputs(
     txn: &Transaction,
     uniswap_router_contract: &IUniswapV2Router<Provider<Http>>,
-  ) -> Result<(UniTxnInput, UniTxnMethod), AbiError> {
+  ) -> Result<(UniTxnInput, UniTxnMethod)> {
     let txn_method = decode_txn_method(&txn).expect("Trying to decode an unsupported method");
 
     let txn_inputs = match txn_method {
@@ -214,130 +311,5 @@ pub mod uni_v2 {
     };
 
     Ok((txn_inputs, txn_method))
-  }
-
-  fn log_eth_txn_inputs(
-    txn: &Transaction,
-    txn_method: &EthTxnMethod,
-    txn_inputs: &ISwapEthInputs,
-    logger: &Arc<Mutex<Logger>>,
-    token_map: &HashMap<String, Token>,
-  ) {
-    let token_addr = txn_inputs.2;
-    let amount_out_str = match get_token(token_map, &token_addr) {
-      Some(t) => {
-        // let units = txn_inputs.0 / t.decimals;
-        let units = quant_after_division(txn_inputs.0, &t);
-        let symbol = &t.symbol;
-        format!("for {} {}", units, symbol)
-      },
-      None => {
-        format!("for {} {}", txn_inputs.0, &token_addr)
-      }
-    };
-
-    let logger = Arc::clone(&logger);
-    let mut logger = logger.lock().unwrap();
-    logger
-      .same()
-      .indent(1)
-      .log(format!("Txn {} :: ", &txn.hash()))
-      .log(format!("Trade {} ETH {}", format_ether(txn.value), amount_out_str));
-  }
-
-  fn log_token_txn_inputs(
-    txn: &Transaction,
-    method: &TokenTxnMethod,
-    inputs: &ISwapTokenInputs,
-    logger: &Arc<Mutex<Logger>>,
-    token_map: &HashMap<String, Token>,
-  ) {
-    let origin_token_addr = inputs.2.get(0).unwrap();
-    let origin_token = get_token(token_map, origin_token_addr);
-    let origin_quantity = inputs.0;
-    let origin_token_str = match origin_token {
-      Some(t) => {
-        format!("{}", &t.symbol)
-      },
-      None => {
-        format!("{}", origin_token_addr)
-      }
-    };
-    let origin_token_quantity = match origin_token {
-      Some(t) => quant_after_division(origin_quantity, &t),
-      None => origin_quantity.as_u128()
-    };
-
-    let destination_token_addr = inputs.2.last().unwrap();
-    let destination_token = get_token(token_map, destination_token_addr);
-    let destination_quantity = inputs.1;
-    let destination_token_str = match method {
-      TokenTxnMethod::SwapExactTokensForEth | TokenTxnMethod::SwapTokensForExactEth => String::from("ETH"),
-      TokenTxnMethod::SwapTokensForExactTokens | TokenTxnMethod::SwapExactTokensForTokens => match destination_token {
-        Some(t) => format!("{}", &t.symbol),
-        None => format!("{}", origin_token_addr)
-      }
-    };
-    let destination_token_quantity = match method {
-      TokenTxnMethod::SwapExactTokensForEth | TokenTxnMethod::SwapTokensForExactEth => format_ether(destination_quantity).as_u128(),
-      TokenTxnMethod::SwapTokensForExactTokens | TokenTxnMethod::SwapExactTokensForTokens => match destination_token {
-        Some(t) => quant_after_division(destination_quantity, &t),
-        None => destination_quantity.as_u128()
-      }
-    };
-
-    let input_str = format!("Trade {} {} for {} {}", origin_token_quantity, origin_token_str, destination_token_quantity, destination_token_str);
-    let logger = Arc::clone(&logger);
-    let mut logger = logger.lock().unwrap();
-    logger.same()
-      .indent(1)
-      .log(format!("Txn {} :: ", &txn.hash()))
-      .log(input_str);
-  }
-
-  fn quant_after_division(origin_quantity: U256, t: &&Token) -> u128 {
-    origin_quantity.as_u128() / ((10 as u128).pow(*&t.decimals as u32))
-  }
-
-  fn get_token<'a>(token_map: &'a HashMap<String, Token>, token_addr: &Address) -> Option<&'a Token> {
-    let token_addr_str = format!("0x{}",hex::encode(token_addr));
-    token_map.get(&token_addr_str)
-  }
-
-  pub fn serial_decode_uni_txns_call_data(txns: Vec<&Transaction>, client: Arc<Provider<Http>>) {
-    let uni_router_contract = get_uniswap_router_contract(client);
-    let mut logger = Logger::new();
-
-    for txn in txns {
-      logger.indent(1).log(format!("Txn :: {}", &txn.hash()));
-      let inputs: Result<(U256, Vec<Address>, Address, U256), AbiError> =
-        // SwapExactEthforTokens(uint256 amountOutMin, address[] path, address to, uint256 deadline)
-        uni_router_contract.decode("SwapExactEthforTokens", &txn.input);
-      match inputs {
-        Ok(inputs) => {
-          // SwapExactEthforTokens(uint256 amountOutMin, address[] path, address to, uint256 deadline)
-          let paths: Vec<Address> = inputs.1;
-          logger
-            .same()
-            .indent(2)
-            .log(format!("swap {} eth", format_ether(txn.value)))
-            .indent(2)
-            .log(format!("amountOutMin: {}", inputs.0))
-            .indent(2)
-            .log(format!("to: {}", inputs.2));
-          // logger.log(format!("path: ${}", inputs.1));
-          for path in paths {
-            logger
-              .indent(2)
-              .log(format!("through: {}", path.to_string()));
-          }
-        }
-        Err(_err) => {
-          logger.indent(2).log("Unsupported Uniswap Method");
-          // .same()
-          // .log(format!("[{}]", err));
-        }
-      };
-    }
   }
 }
