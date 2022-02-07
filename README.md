@@ -11,9 +11,9 @@ This is how I'll learn Rust and Blockchain Development
 - [x] Better [project structure](https://doc.rust-lang.org/book/ch07-00-managing-growing-projects-with-packages-crates-and-modules.html)
 - [x] Transaction type router (before decryption)
 - [x] More transaction types
-- [ ] Better logging
+- [ ] Remove logging logic from decode
 - [ ] Testing &#128584;&#128584;&#128584;
-- [ ] Integrate [token-list](https://github.com/telcoin/token-list)
+- [x] Integrate [token-list](https://github.com/telcoin/token-list)
 - [ ] Cli Options :: filter_token, filter_threshold, time_machine
 
 ## Strech
