@@ -26,6 +26,8 @@ async fn main() -> anyhow::Result<()> {
   let client = get_http_client();
   let arc_client = Arc::new(client.clone());
 
+
+
   let mut logger = Logger::new();
 
   let mut token_map = HashMap::new();
@@ -37,6 +39,29 @@ async fn main() -> anyhow::Result<()> {
     token_map.insert(token.address.clone(), token.clone());
     // logger.same().log(token.name).indent(1).log(token.address);
   }
+
+  // let current_block = client.get_block_number().await.unwrap();
+  // let mut starting_block = current_block - 1000;
+
+  // while starting_block != current_block {
+  //   let full_block = client.get_block_with_txs(starting_block).await.unwrap();
+  //
+  //   match full_block {
+  //     Some(block) => {
+  //       let uniswap_txns: Vec<&Transaction> = filter_uni_txns(&block);
+  //
+  //       logger
+  //         .done()
+  //         .info(format!("New block {}", &block.hash.unwrap()));
+  //       if uniswap_txns.len() > 0 {
+  //         parallel_decode_uni_txns_call_data(uniswap_txns, arc_client.clone(), &token_map);
+  //       }
+  //       starting_block = block.number.unwrap() + 1;
+  //     }
+  //     _ => {}
+  //   }
+  //
+  // }
 
   logger.loading("Waiting for next transaction...");
 

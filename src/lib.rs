@@ -179,17 +179,12 @@ pub mod uni_v2 {
     }
 
     fn parse_u256_to_f64(amount: &U256, decimals: usize) -> f64 {
-      // let str = format!("{}", amount);
-      let error_msg = format!(
-        "decimals: {}\namount: {}",
-        decimals,
-        amount,
-      );
-      let mut padded_str = format!("{:0decimals$}", amount, decimals = decimals);
+      // todo handle overflow casting to u128
+      let mut padded_str = format!("{:0decimals$}", amount.as_u128(), decimals = decimals + 1);
 
-      padded_str.insert((padded_str.len() as u16 - decimals as u16) as usize, '.');
+      padded_str.insert(padded_str.len() - decimals, '.');
 
-      let floating = padded_str.parse::<f64>().expect(&error_msg);
+      let floating = padded_str.parse::<f64>().unwrap();
       floating
     }
   }
