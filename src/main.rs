@@ -14,7 +14,7 @@ use paris::Logger;
 use token_list::TokenList;
 
 use uni_listen::{INFURA_HTTP_ENDPOINT, INFURA_WS_ENDPOINT, TOKEN_LIST_ENDPOINT};
-use uni_listen::uni_v2::{filter_uni_txns, parallel_decode_uni_txns_call_data};
+use uni_listen::uni_v2::{filter_uni_txns, get_uniswap_router_contract, UniTxnInputs};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -26,9 +26,9 @@ async fn main() -> anyhow::Result<()> {
   let client = get_http_client();
   let arc_client = Arc::new(client.clone());
 
-
-
   let mut logger = Logger::new();
+
+  let uni_router_contract = get_uniswap_router_contract(arc_client.clone());
 
   let mut token_map = HashMap::new();
   let token_list = TokenList::from_uri(TOKEN_LIST_ENDPOINT).await
@@ -78,7 +78,13 @@ async fn main() -> anyhow::Result<()> {
       .done()
       .info(format!("New block {}", &full_block.hash.unwrap()));
     if uniswap_txns.len() > 0 {
-      parallel_decode_uni_txns_call_data(uniswap_txns, arc_client.clone(), &token_map);
+      let call_datas: Vec<(&Transaction, UniTxnInputs)> = uniswap_txns.iter().map(|txn| {
+        let call_data = UniTxnInputs::new(&txn, &uni_router_contract);
+        (*txn, call_data)
+      }).collect();
+      call_datas.iter().for_each(|(txn, call_data)| {
+        logger.indent(1).log(format!("Txn {} :: {}", txn.hash, call_data.log_str(&token_map)));
+      })
     }
 
     logger.loading("Waiting for next transaction...");
