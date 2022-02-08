@@ -25,14 +25,13 @@ pub enum RpcProvider {
 
 pub mod uni_v2 {
   use std::collections::HashMap;
-  use std::sync::{Arc, Mutex};
+  use std::sync::Arc;
 
+  use anyhow::{Ok, Result};
   use ethers::prelude::*;
-  use ethers::utils::{hex};
-  use paris::Logger;
+  use ethers::utils::hex;
   use rayon::prelude::*;
   use token_list::Token;
-  use anyhow::{Result, Ok};
 
   pub const UNISWAP_ADDR_STR: &'static str = "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D";
   pub const AVAILABLE_METHOD_STRS: &'static [&'static str] = &[
@@ -72,7 +71,7 @@ pub mod uni_v2 {
     SwapTokensForExactEth,
   }
 
-  struct UniTxnInputs {
+  pub struct UniTxnInputs {
     origin_address: Option<Address>,
     origin_amount: U256,
     destination_address: Option<Address>,
@@ -80,7 +79,7 @@ pub mod uni_v2 {
   }
 
   impl UniTxnInputs {
-    fn new(txn: &Transaction, uniswap_router_contract: &IUniswapV2Router<Provider<Http>>) -> UniTxnInputs {
+    pub fn new(txn: &Transaction, uniswap_router_contract: &IUniswapV2Router<Provider<Http>>) -> UniTxnInputs {
       let (txn_inputs, method) = decode_txn_inputs(txn, uniswap_router_contract).unwrap();
       match txn_inputs {
         UniTxnInput::SwapEth(inputs) => {
@@ -226,23 +225,11 @@ pub mod uni_v2 {
       .collect()
   }
 
-  pub fn parallel_decode_uni_txns_call_data(
-    txns: Vec<&Transaction>,
-    client: Arc<Provider<Http>>,
-    token_map: &HashMap<String, Token>,
-  ) {
-    let uni_router_contract = get_uniswap_router_contract(client);
-
-    let logger = Logger::new();
-    let logger = Arc::new(Mutex::new(logger));
-
-    txns.par_iter().for_each(|txn| {
-      let uni_txn = UniTxnInputs::new(txn, &uni_router_contract);
-      let log_str = uni_txn.log_str(token_map);
-      let logger = Arc::clone(&logger);
-      let mut logger = logger.lock().unwrap();
-      logger.log(format!("Txn {} :: {}", txn.hash, log_str));
-    });
+  pub fn decode_uni_txn_call_data(
+    txn: &Transaction,
+    contract: IUniswapV2Router<Provider<Http>>,
+  ) -> UniTxnInputs {
+    UniTxnInputs::new(txn, &contract)
   }
 
   fn decode_txn_method(txn: &Transaction) -> Option<UniTxnMethod> {
