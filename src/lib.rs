@@ -1,5 +1,4 @@
-// Uniswap Constants
-
+mod uni_v2_router;
 // pub const TOKEN_LIST_ENDPOINT: &'static str = "https://defi.cmc.eth.link";
 pub const TOKEN_LIST_ENDPOINT: &'static str = "https://tokens.coingecko.com/uniswap/all.json";
 
@@ -168,6 +167,8 @@ pub mod uni_v2 {
     use rayon::prelude::*;
     use token_list::Token;
 
+    use crate::uni_v2_router::UniV2Router;
+
     pub const UNISWAP_ADDR_STR: &'static str = "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D";
     pub const AVAILABLE_METHOD_STRS: &'static [&'static str] = &[
         "0x18cbafe5", // SwapExactTokensForEth(uint256 amountIn, uint256 amountOutMin, address[] path, address to, uint256 deadline)
@@ -216,7 +217,7 @@ pub mod uni_v2 {
     impl UniTxnInputs {
         pub fn new<T>(
             txn: &Transaction,
-            uniswap_router_contract: &IUniswapV2Router<Provider<T>>,
+            uniswap_router_contract: &UniV2Router<Provider<T>>,
         ) -> UniTxnInputs
         where
             T: JsonRpcClient,
@@ -345,20 +346,14 @@ pub mod uni_v2 {
         }
     }
 
-    abigen!(
-        IUniswapV2Router,
-        "./uniswap-v2-abi.json",
-        event_derives(serde::Deserialize, serde::Serialize)
-    );
-
-    pub fn get_uniswap_router_contract<T>(client: Arc<Provider<T>>) -> IUniswapV2Router<Provider<T>>
+    pub fn get_uniswap_router_contract<T>(client: Arc<Provider<T>>) -> UniV2Router<Provider<T>>
     where
         T: JsonRpcClient,
     {
         let address = UNISWAP_ADDR_STR
             .parse::<Address>()
             .expect("Can't find uniswap address");
-        IUniswapV2Router::new(address, client.clone())
+        UniV2Router::new(address, client.clone())
     }
 
     pub fn filter_uni_txns(full_block: &Block<Transaction>) -> Vec<&Transaction> {
@@ -385,7 +380,7 @@ pub mod uni_v2 {
 
     pub fn decode_uni_txn_call_data(
         txn: &Transaction,
-        contract: IUniswapV2Router<Provider<Http>>,
+        contract: UniV2Router<Provider<Http>>,
     ) -> UniTxnInputs {
         UniTxnInputs::new(txn, &contract)
     }
@@ -409,7 +404,7 @@ pub mod uni_v2 {
 
     fn decode_txn_inputs<T>(
         txn: &Transaction,
-        uniswap_router_contract: &IUniswapV2Router<Provider<T>>,
+        uniswap_router_contract: &UniV2Router<Provider<T>>,
     ) -> Result<(UniTxnInput, UniTxnMethod)>
     where
         T: JsonRpcClient,
