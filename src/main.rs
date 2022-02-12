@@ -9,10 +9,11 @@ use ethers::types::Transaction;
 use paris::Logger;
 use token_list::TokenList;
 
+use uni_listen::config::get_config;
+
 use uni_listen::{
-    config::get_config,
-    provider::{get_http_client, get_ipc_provider, get_ws_provider},
-    uni_v2::{filter_uni_txns, get_uniswap_router_contract, UniTxnInputs},
+    provider::{get_http_client, get_ws_provider},
+    uni_helpers::{filter_uni_txns, get_uniswap_router_contract, UniTxnInputs},
     TOKEN_LIST_ENDPOINT,
 };
 
