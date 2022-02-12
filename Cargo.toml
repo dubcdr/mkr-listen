@@ -9,6 +9,7 @@ edition = "2021"
 ethers = { git = "https://github.com/gakonst/ethers-rs", features = [
   "ws",
   "openssl",
+  "ipc",
 ] }
 tokio = { version = "1", features = ["full"] }
 anyhow = "1.0"
@@ -17,5 +18,5 @@ serde = "1.0.136"
 paris = { version = "1.5", features = [] }
 rayon = "1.5"
 token-list = { version = "0.1.0", features = ["from-uri"] }
+clap = { version = "3.0.14", features = ["derive"] }
 dotenv = "0.15.0"
-#paris = {version = "1.5", features = ["timestamps", "macros"]}
