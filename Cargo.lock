@@ -367,9 +367,9 @@ dependencies = [
 
 [[package]]
 name = "clap"
-version = "3.0.12"
+version = "3.0.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2afefa54b5c7dd40918dc1e09f213a171ab5937aadccab45e804780b238f9f43"
+checksum = "b63edc3f163b3c71ec8aa23f9bd6070f77edbf3d1d198b164afa90ff00e4ec62"
 dependencies = [
  "atty",
  "bitflags",
@@ -994,6 +994,7 @@ source = "git+https://github.com/gakonst/ethers-rs#78dfd7591d03f1ab031de7c5878e6
 dependencies = [
  "async-trait",
  "auto_impl",
+ "bytes",
  "ethers-core",
  "futures-channel",
  "futures-core",
@@ -1008,6 +1009,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-tungstenite",
+ "tokio-util",
  "tracing",
  "tracing-futures",
  "url",
@@ -3086,6 +3088,7 @@ name = "uni-listen"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "clap",
  "dotenv",
  "ethers",
  "paris",

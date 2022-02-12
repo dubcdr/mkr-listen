@@ -1,109 +1,120 @@
 extern crate core;
 
 use std::collections::HashMap;
-use std::env;
 use std::sync::Arc;
-use std::time::Duration;
 
 use anyhow::Ok as AnyhowOk;
-use dotenv::dotenv;
 use ethers::prelude::*;
-use ethers::providers::Http;
 use ethers::types::Transaction;
 use paris::Logger;
 use token_list::TokenList;
 
-use uni_listen::{INFURA_HTTP_ENDPOINT, INFURA_WS_ENDPOINT, TOKEN_LIST_ENDPOINT};
-use uni_listen::uni_v2::{filter_uni_txns, get_uniswap_router_contract, UniTxnInputs};
+use uni_listen::{
+    config::get_config,
+    provider::{get_http_client, get_ipc_provider, get_ws_provider},
+    uni_v2::{filter_uni_txns, get_uniswap_router_contract, UniTxnInputs},
+    TOKEN_LIST_ENDPOINT,
+};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-  dotenv().ok();
+    let uni_config = get_config();
 
-  let provider = get_ws_provider(2000).await;
-  let mut stream = provider.watch_blocks().await?;
+    let provider = get_ws_provider(&uni_config.ws_url, 2000).await;
 
-  let client = get_http_client();
-  let arc_client = Arc::new(client.clone());
+    // if uni_config.use_ipc {
+    //     provider = get_ipc_provider(&uni_config.ws_url, 2000).await;
+    // }
 
-  let mut logger = Logger::new();
+    // let provider = get_geth_ws_provider(50).await;
+    let mut stream = provider.watch_blocks().await?;
 
-  let uni_router_contract = get_uniswap_router_contract(arc_client.clone());
+    let client = get_http_client(&uni_config.http_url);
+    let arc_client = Arc::new(client.clone());
 
-  let mut token_map = HashMap::new();
-  let token_list = TokenList::from_uri(TOKEN_LIST_ENDPOINT).await
-    .expect("Failed to parse token endpoint");
+    let mut logger = Logger::new();
 
-  // logger.log("Available Tokens");
-  for token in token_list.tokens {
-    token_map.insert(token.address.clone(), token.clone());
-    // logger.same().log(token.name).indent(1).log(token.address);
-  }
+    let uni_router_contract = get_uniswap_router_contract(arc_client.clone());
 
-  // let current_block = client.get_block_number().await.unwrap();
-  // let mut starting_block = current_block - 1000;
+    let mut token_map = HashMap::new();
+    let token_list = TokenList::from_uri(TOKEN_LIST_ENDPOINT)
+        .await
+        .expect("Failed to parse token endpoint");
 
-  // while starting_block != current_block {
-  //   let full_block = client.get_block_with_txs(starting_block).await.unwrap();
-  //
-  //   match full_block {
-  //     Some(block) => {
-  //       let uniswap_txns: Vec<&Transaction> = filter_uni_txns(&block);
-  //
-  //       logger
-  //         .done()
-  //         .info(format!("New block {}", &block.hash.unwrap()));
-  //       if uniswap_txns.len() > 0 {
-  //         parallel_decode_uni_txns_call_data(uniswap_txns, arc_client.clone(), &token_map);
-  //       }
-  //       starting_block = block.number.unwrap() + 1;
-  //     }
-  //     _ => {}
-  //   }
-  //
-  // }
+    // logger.log("Available Tokens");
+    for token in token_list.tokens {
+        token_map.insert(token.address.clone(), token.clone());
+        // logger.same().log(token.name).indent(1).log(token.address);
+    }
 
-  logger.loading("Waiting for next transaction...");
+    let current_block = client.get_block_number().await.unwrap();
+    let mut starting_block = current_block - 50 as u64;
 
-  while let Some(block) = stream.next().await {
-    let full_block = client
-      .get_block_with_txs(block)
-      .await?
-      .expect("oh shit, block probably hasnt arrived");
+    while starting_block != current_block {
+        let full_block = client.get_block_with_txs(starting_block).await.unwrap();
 
-    // filter to uniswap transactions
-    let uniswap_txns: Vec<&Transaction> = filter_uni_txns(&full_block);
+        match full_block {
+            Some(block) => {
+                let uniswap_txns: Vec<&Transaction> = filter_uni_txns(&block);
 
-    logger
-      .done()
-      .info(format!("New block {}", &full_block.hash.unwrap()));
-    if uniswap_txns.len() > 0 {
-      let call_datas: Vec<(&Transaction, UniTxnInputs)> = uniswap_txns.iter().map(|txn| {
-        let call_data = UniTxnInputs::new(&txn, &uni_router_contract);
-        (*txn, call_data)
-      }).collect();
-      call_datas.iter().for_each(|(txn, call_data)| {
-        logger.indent(1).log(format!("Txn {} :: {}", txn.hash, call_data.log_str(&token_map)));
-      })
+                logger
+                    .done()
+                    .info(format!("New block {}", &block.hash.unwrap()));
+                if uniswap_txns.len() > 0 {
+                    let call_datas: Vec<(&Transaction, UniTxnInputs)> = uniswap_txns
+                        .iter()
+                        .map(|txn| {
+                            let call_data = UniTxnInputs::new(&txn, &uni_router_contract);
+                            (*txn, call_data)
+                        })
+                        .collect();
+                    call_datas.iter().for_each(|(txn, call_data)| {
+                        logger.indent(1).log(format!(
+                            "Txn {} :: {}",
+                            txn.hash,
+                            call_data.log_str(&token_map)
+                        ));
+                    })
+                }
+                starting_block = block.number.unwrap() + 1 as u64;
+            }
+            _ => {}
+        }
     }
 
     logger.loading("Waiting for next transaction...");
-  }
 
-  AnyhowOk(())
-}
+    while let Some(block) = stream.next().await {
+        let full_block = client
+            .get_block_with_txs(block)
+            .await?
+            .expect("oh shit, block probably hasnt arrived");
 
-async fn get_ws_provider(duration: u64) -> Provider<Ws> {
-  let infura_project_id = env::var("INFURA_PROJECT_ID").expect("Need infura project id");
-  let ws = Ws::connect(format!("{}/{}", INFURA_WS_ENDPOINT, infura_project_id))
-    .await
-    .expect("Can't connect to Websocket Provider");
-  let provider = Provider::new(ws).interval(Duration::from_millis(duration));
-  provider
-}
+        // filter to uniswap transactions
+        let uniswap_txns: Vec<&Transaction> = filter_uni_txns(&full_block);
 
-fn get_http_client() -> Provider<Http> {
-  let infura_project_id = env::var("INFURA_PROJECT_ID").expect("Need infura project id");
-  Provider::<Http>::try_from(format!("{}/{}", INFURA_HTTP_ENDPOINT, infura_project_id))
-    .expect("Can't connect to HTTP Provider")
+        logger
+            .done()
+            .info(format!("New block {}", &full_block.hash.unwrap()));
+        if uniswap_txns.len() > 0 {
+            let call_datas: Vec<(&Transaction, UniTxnInputs)> = uniswap_txns
+                .iter()
+                .map(|txn| {
+                    let call_data = UniTxnInputs::new(&txn, &uni_router_contract);
+                    (*txn, call_data)
+                })
+                .collect();
+            call_datas.iter().for_each(|(txn, call_data)| {
+                logger.indent(1).log(format!(
+                    "Txn {} :: {}",
+                    txn.hash,
+                    call_data.log_str(&token_map)
+                ));
+            })
+        }
+
+        logger.loading("Waiting for next transaction...");
+    }
+
+    AnyhowOk(())
 }
