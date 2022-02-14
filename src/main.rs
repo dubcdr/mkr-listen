@@ -1,7 +1,10 @@
 extern crate core;
 
 use std::collections::HashMap;
+use std::convert::Infallible;
 use std::sync::Arc;
+use std::thread;
+use std::time::Duration;
 
 use anyhow::Ok as AnyhowOk;
 use ethers::prelude::*;
@@ -23,11 +26,6 @@ async fn main() -> anyhow::Result<()> {
 
     let provider = get_ws_provider(&uni_config.ws_url, 2000).await;
 
-    // if uni_config.use_ipc {
-    //     provider = get_ipc_provider(&uni_config.ws_url, 2000).await;
-    // }
-
-    // let provider = get_geth_ws_provider(50).await;
     let mut stream = provider.watch_blocks().await?;
 
     let client = get_http_client(&uni_config.http_url);
@@ -42,14 +40,23 @@ async fn main() -> anyhow::Result<()> {
         .await
         .expect("Failed to parse token endpoint");
 
-    // logger.log("Available Tokens");
     for token in token_list.tokens {
         token_map.insert(token.address.clone(), token.clone());
-        // logger.same().log(token.name).indent(1).log(token.address);
     }
 
     let current_block = client.get_block_number().await.unwrap();
-    let mut starting_block = current_block - 50 as u64;
+    let mut starting_block = current_block;
+
+    if uni_config.prev_blocks.is_some() {
+        starting_block = starting_block - uni_config.prev_blocks.unwrap();
+    } else if uni_config.since_block.is_some() {
+        let result: Result<U64, Infallible> = uni_config.since_block.unwrap().try_into();
+        let start_block = match result {
+            Ok(block) => block,
+            Err(_) => panic!("Failed to parse start block correctly"),
+        };
+        starting_block = start_block;
+    }
 
     while starting_block != current_block {
         let full_block = client.get_block_with_txs(starting_block).await.unwrap();
@@ -75,7 +82,7 @@ async fn main() -> anyhow::Result<()> {
                             txn.hash,
                             call_data.log_str(&token_map)
                         ));
-                    })
+                    });
                 }
                 starting_block = block.number.unwrap() + 1 as u64;
             }
@@ -85,36 +92,38 @@ async fn main() -> anyhow::Result<()> {
 
     logger.loading("Waiting for next transaction...");
 
-    while let Some(block) = stream.next().await {
-        let full_block = client
-            .get_block_with_txs(block)
-            .await?
-            .expect("oh shit, block probably hasnt arrived");
+    if uni_config.watch_blocks {
+        while let Some(block) = stream.next().await {
+            let full_block = client
+                .get_block_with_txs(block)
+                .await?
+                .expect("oh shit, block probably hasnt arrived");
 
-        // filter to uniswap transactions
-        let uniswap_txns: Vec<&Transaction> = filter_uni_txns(&full_block);
+            // filter to uniswap transactions
+            let uniswap_txns: Vec<&Transaction> = filter_uni_txns(&full_block);
 
-        logger
-            .done()
-            .info(format!("New block {}", &full_block.hash.unwrap()));
-        if uniswap_txns.len() > 0 {
-            let call_datas: Vec<(&Transaction, UniTxnInputs)> = uniswap_txns
-                .iter()
-                .map(|txn| {
-                    let call_data = UniTxnInputs::new(&txn, &uni_router_contract);
-                    (*txn, call_data)
+            logger
+                .done()
+                .info(format!("New block {}", &full_block.hash.unwrap()));
+            if uniswap_txns.len() > 0 {
+                let call_datas: Vec<(&Transaction, UniTxnInputs)> = uniswap_txns
+                    .iter()
+                    .map(|txn| {
+                        let call_data = UniTxnInputs::new(&txn, &uni_router_contract);
+                        (*txn, call_data)
+                    })
+                    .collect();
+                call_datas.iter().for_each(|(txn, call_data)| {
+                    logger.indent(1).log(format!(
+                        "Txn {} :: {}",
+                        txn.hash,
+                        call_data.log_str(&token_map)
+                    ));
                 })
-                .collect();
-            call_datas.iter().for_each(|(txn, call_data)| {
-                logger.indent(1).log(format!(
-                    "Txn {} :: {}",
-                    txn.hash,
-                    call_data.log_str(&token_map)
-                ));
-            })
-        }
+            }
 
-        logger.loading("Waiting for next transaction...");
+            logger.loading("Waiting for next transaction...");
+        }
     }
 
     AnyhowOk(())
