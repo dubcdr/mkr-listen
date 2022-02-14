@@ -1,4 +1,5 @@
 pub mod config;
+pub mod logging;
 pub mod uni_helpers;
 
 mod uni_v2_router;
