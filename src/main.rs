@@ -14,9 +14,10 @@ use token_list::TokenList;
 
 use uni_listen::config::get_config;
 
+use uni_listen::logging::log_txns;
 use uni_listen::{
     provider::{get_http_client, get_ws_provider},
-    uni_helpers::{filter_uni_txns, get_uniswap_router_contract, UniTxnInputs},
+    uni_helpers::{filter_uni_txns, get_uniswap_router_contract},
     TOKEN_LIST_ENDPOINT,
 };
 
@@ -67,22 +68,9 @@ async fn main() -> anyhow::Result<()> {
 
                 logger
                     .done()
-                    .info(format!("New block {}", &block.hash.unwrap()));
+                    .info(format!("Block {}", &block.hash.unwrap()));
                 if uniswap_txns.len() > 0 {
-                    let call_datas: Vec<(&Transaction, UniTxnInputs)> = uniswap_txns
-                        .iter()
-                        .map(|txn| {
-                            let call_data = UniTxnInputs::new(&txn, &uni_router_contract);
-                            (*txn, call_data)
-                        })
-                        .collect();
-                    call_datas.iter().for_each(|(txn, call_data)| {
-                        logger.indent(1).log(format!(
-                            "Txn {} :: {}",
-                            txn.hash,
-                            call_data.log_str(&token_map)
-                        ));
-                    });
+                    log_txns(uniswap_txns, &token_map, &uni_router_contract)
                 }
                 starting_block = block.number.unwrap() + 1 as u64;
             }
@@ -106,20 +94,7 @@ async fn main() -> anyhow::Result<()> {
                 .done()
                 .info(format!("New block {}", &full_block.hash.unwrap()));
             if uniswap_txns.len() > 0 {
-                let call_datas: Vec<(&Transaction, UniTxnInputs)> = uniswap_txns
-                    .iter()
-                    .map(|txn| {
-                        let call_data = UniTxnInputs::new(&txn, &uni_router_contract);
-                        (*txn, call_data)
-                    })
-                    .collect();
-                call_datas.iter().for_each(|(txn, call_data)| {
-                    logger.indent(1).log(format!(
-                        "Txn {} :: {}",
-                        txn.hash,
-                        call_data.log_str(&token_map)
-                    ));
-                })
+                log_txns(uniswap_txns, &token_map, &uni_router_contract)
             }
 
             logger.loading("Waiting for next transaction...");
