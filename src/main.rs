@@ -3,22 +3,25 @@ extern crate core;
 use std::collections::HashMap;
 use std::convert::Infallible;
 use std::sync::Arc;
-use std::thread;
-use std::time::Duration;
+
+mod config;
+mod logging;
+mod provider;
+mod uni_helpers;
+mod uni_v2_router;
 
 use anyhow::Ok as AnyhowOk;
 use ethers::prelude::*;
 use ethers::types::Transaction;
 use paris::Logger;
 use token_list::TokenList;
+use uni_listen::TOKEN_LIST_ENDPOINT;
 
-use uni_listen::config::get_config;
-
-use uni_listen::logging::log_txns;
-use uni_listen::{
+use crate::{
+    config::get_config,
+    logging::log_txns,
     provider::{get_http_client, get_ws_provider},
     uni_helpers::{filter_uni_txns, get_uniswap_router_contract},
-    TOKEN_LIST_ENDPOINT,
 };
 
 #[tokio::main]
@@ -69,10 +72,10 @@ async fn main() -> anyhow::Result<()> {
                 logger
                     .done()
                     .info(format!("Block {}", &block.hash.unwrap()));
-                if uniswap_txns.len() > 0 {
+                if !uniswap_txns.is_empty() {
                     log_txns(uniswap_txns, &token_map, &uni_router_contract)
                 }
-                starting_block = block.number.unwrap() + 1 as u64;
+                starting_block = block.number.unwrap() + 1_u64;
             }
             _ => {}
         }
@@ -93,7 +96,7 @@ async fn main() -> anyhow::Result<()> {
             logger
                 .done()
                 .info(format!("New block {}", &full_block.hash.unwrap()));
-            if uniswap_txns.len() > 0 {
+            if !uniswap_txns.is_empty() {
                 log_txns(uniswap_txns, &token_map, &uni_router_contract)
             }
 
