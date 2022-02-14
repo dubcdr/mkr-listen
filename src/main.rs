@@ -3,21 +3,23 @@ extern crate core;
 use std::collections::HashMap;
 use std::convert::Infallible;
 use std::sync::Arc;
-use std::thread;
-use std::time::Duration;
 
 use anyhow::Ok as AnyhowOk;
 use ethers::prelude::*;
 use ethers::types::Transaction;
 use paris::Logger;
 use token_list::TokenList;
+use uni_listen::TOKEN_LIST_ENDPOINT;
 
-use uni_listen::config::get_config;
+mod config;
+mod provider;
+mod uni_helpers;
+mod uni_v2_router;
 
-use uni_listen::{
+use crate::{
+    config::get_config,
     provider::{get_http_client, get_ws_provider},
     uni_helpers::{filter_uni_txns, get_uniswap_router_contract, UniTxnInputs},
-    TOKEN_LIST_ENDPOINT,
 };
 
 #[tokio::main]
@@ -61,32 +63,29 @@ async fn main() -> anyhow::Result<()> {
     while starting_block != current_block {
         let full_block = client.get_block_with_txs(starting_block).await.unwrap();
 
-        match full_block {
-            Some(block) => {
-                let uniswap_txns: Vec<&Transaction> = filter_uni_txns(&block);
+        if let Some(block) = full_block {
+            let uniswap_txns: Vec<&Transaction> = filter_uni_txns(&block);
 
-                logger
-                    .done()
-                    .info(format!("New block {}", &block.hash.unwrap()));
-                if uniswap_txns.len() > 0 {
-                    let call_datas: Vec<(&Transaction, UniTxnInputs)> = uniswap_txns
-                        .iter()
-                        .map(|txn| {
-                            let call_data = UniTxnInputs::new(&txn, &uni_router_contract);
-                            (*txn, call_data)
-                        })
-                        .collect();
-                    call_datas.iter().for_each(|(txn, call_data)| {
-                        logger.indent(1).log(format!(
-                            "Txn {} :: {}",
-                            txn.hash,
-                            call_data.log_str(&token_map)
-                        ));
-                    });
-                }
-                starting_block = block.number.unwrap() + 1 as u64;
+            logger
+                .done()
+                .info(format!("New block {}", &block.hash.unwrap()));
+            if !uniswap_txns.is_empty() {
+                let call_datas: Vec<(&Transaction, UniTxnInputs)> = uniswap_txns
+                    .iter()
+                    .map(|txn| {
+                        let call_data = UniTxnInputs::new(txn, &uni_router_contract);
+                        (*txn, call_data)
+                    })
+                    .collect();
+                call_datas.iter().for_each(|(txn, call_data)| {
+                    logger.indent(1).log(format!(
+                        "Txn {} :: {}",
+                        txn.hash,
+                        call_data.log_str(&token_map)
+                    ));
+                });
             }
-            _ => {}
+            starting_block = block.number.unwrap() + 1_u64;
         }
     }
 
@@ -105,11 +104,11 @@ async fn main() -> anyhow::Result<()> {
             logger
                 .done()
                 .info(format!("New block {}", &full_block.hash.unwrap()));
-            if uniswap_txns.len() > 0 {
+            if !uniswap_txns.is_empty() {
                 let call_datas: Vec<(&Transaction, UniTxnInputs)> = uniswap_txns
                     .iter()
                     .map(|txn| {
-                        let call_data = UniTxnInputs::new(&txn, &uni_router_contract);
+                        let call_data = UniTxnInputs::new(txn, &uni_router_contract);
                         (*txn, call_data)
                     })
                     .collect();
